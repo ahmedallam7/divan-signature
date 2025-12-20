@@ -4,7 +4,7 @@ namespace UUNATEK.API.Helpers
 {
     public class ErrorHandler
     {
-        public static MachineResponse GetErrorResponse(int errorCode)
+        public static Response GetErrorResponse(int errorCode)
         {
             return errorCode switch
             {
@@ -13,7 +13,7 @@ namespace UUNATEK.API.Helpers
                 -3 => ServiceBusy(),
                 1 => FailedToGenerate(),
                 2 => SoftwareUnAuthorized(),
-                _ => new MachineResponse
+                _ => new Response
                 {
                     Success = false,
                     Message = "Unknown error.",
@@ -21,7 +21,7 @@ namespace UUNATEK.API.Helpers
                 },
             };
         }
-        public static MachineResponse MachineNotAvailable() =>
+        public static Response MachineNotAvailable() =>
             new()
             {
                 Success = false,
@@ -29,7 +29,7 @@ namespace UUNATEK.API.Helpers
                 Error = -2
             };
 
-        public static MachineResponse ParameterError() => 
+        public static Response ParameterError() => 
             new()
             {
                 Success = false,
@@ -37,7 +37,7 @@ namespace UUNATEK.API.Helpers
                 Error = -1
             };
 
-        public static MachineResponse ServiceBusy() => 
+        public static Response ServiceBusy() => 
             new()
             {
                 Success = false,
@@ -45,7 +45,7 @@ namespace UUNATEK.API.Helpers
                 Error = -3
             };
 
-        public static MachineResponse FailedToGenerate() =>
+        public static Response FailedToGenerate() =>
             new()
             {
                 Success = false,
@@ -53,14 +53,14 @@ namespace UUNATEK.API.Helpers
                 Error = 1
             };
 
-        public static MachineResponse SoftwareUnAuthorized() =>
+        public static Response SoftwareUnAuthorized() =>
             new()
             {
                 Success = false,
                 Message = "Software unauthorized, Need to login to the software again.",
                 Error = 2
             };
-        public static MachineResponse FileNotExist() =>
+        public static Response FileNotExist() =>
             new()
             {
                 Success = false,

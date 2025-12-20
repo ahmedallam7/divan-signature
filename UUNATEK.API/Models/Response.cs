@@ -1,14 +1,14 @@
 ﻿namespace UUNATEK.API.Models
 {
-    public class MachineResponse
+    public class Response
     {
         public bool Success { get; set; }
         public string Message { get; set; } = string.Empty;
         public int Error { get; set; }
 
-        public static MachineResponse CreateSuccess(string message = "Operation completed successfully.")
+        public static Response CreateSuccess(string message = "Operation completed successfully.")
         {
-            return new MachineResponse
+            return new Response
             {
                 Success = true,
                 Message = message,
@@ -16,9 +16,9 @@
             };
         }
 
-        public static MachineResponse CreateFailure(string message, int errorCode)
+        public static Response CreateFailure(string message, int errorCode)
         {
-            return new MachineResponse
+            return new Response
             {
                 Success = false,
                 Message = message,
@@ -26,4 +26,6 @@
             };
         }
     }
+
+    public record MachineReposne(int Error);
 }
