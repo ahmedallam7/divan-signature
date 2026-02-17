@@ -1,18 +1,16 @@
-using UUNATEK.API.Services;
+using UUNATRK.Application;
+using UUNATRK.Application.Services.Printer;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddHttpClient<IUunaTekPlotter, UunaTekPlotter>();
+builder.Services.AddApplicationServices();
 
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();
 
-builder.Services.AddHttpClient("IAuto", client =>
-{
-    client.BaseAddress = new Uri($"{builder.Configuration["IAuto:BaseUrl"]}");
-});
-
 var app = builder.Build();
+
+app.Services.GetRequiredService<PrinterService>().OpenPort();
 
 if (app.Environment.IsDevelopment())
 {
