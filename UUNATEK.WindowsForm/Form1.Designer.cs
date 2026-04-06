@@ -93,6 +93,8 @@ namespace UUNATEK.WindowsForm
             lblLogApprovalResponseValue = new Label();
             lblLogErrorMessageLabel = new Label();
             lblLogErrorMessageValue = new Label();
+            lblStatusTransitionsLabel = new Label();
+            lblStatusTransitionsValue = new Label();
             openFileDialog = new OpenFileDialog();
             grpConnection.SuspendLayout();
             grpStatus.SuspendLayout();
@@ -759,6 +761,23 @@ namespace UUNATEK.WindowsForm
             lblLogErrorMessageValue.TabIndex = 13;
             lblLogErrorMessageValue.Text = "--";
             
+            lblStatusTransitionsLabel.AutoSize = true;
+            lblStatusTransitionsLabel.Font = new Font("Segoe UI", 9F, FontStyle.Bold);
+            lblStatusTransitionsLabel.Location = new Point(15, 300);
+            lblStatusTransitionsLabel.Name = "lblStatusTransitionsLabel";
+            lblStatusTransitionsLabel.Size = new Size(115, 15);
+            lblStatusTransitionsLabel.TabIndex = 14;
+            lblStatusTransitionsLabel.Text = "Status Transitions:";
+            
+            lblStatusTransitionsValue.AutoSize = true;
+            lblStatusTransitionsValue.Location = new Point(15, 320);
+            lblStatusTransitionsValue.MaximumSize = new Size(505, 0);
+            lblStatusTransitionsValue.Name = "lblStatusTransitionsValue";
+            lblStatusTransitionsValue.Size = new Size(17, 15);
+            lblStatusTransitionsValue.TabIndex = 15;
+            lblStatusTransitionsValue.Text = "--";
+            lblStatusTransitionsValue.Font = new Font("Consolas", 8.5F);
+            
             grpLogDetails.Controls.Add(lblLogRequestIdLabel);
             grpLogDetails.Controls.Add(lblLogRequestIdValue);
             grpLogDetails.Controls.Add(lblLogStatusLabel);
@@ -773,6 +792,8 @@ namespace UUNATEK.WindowsForm
             grpLogDetails.Controls.Add(lblLogApprovalResponseValue);
             grpLogDetails.Controls.Add(lblLogErrorMessageLabel);
             grpLogDetails.Controls.Add(lblLogErrorMessageValue);
+            grpLogDetails.Controls.Add(lblStatusTransitionsLabel);
+            grpLogDetails.Controls.Add(lblStatusTransitionsValue);
             
             openFileDialog.Filter = "SVG Files (*.svg)|*.svg|All Files (*.*)|*.*";
             openFileDialog.Title = "Select an SVG File";
@@ -908,6 +929,8 @@ namespace UUNATEK.WindowsForm
         private Label lblLogApprovalResponseValue;
         private Label lblLogErrorMessageLabel;
         private Label lblLogErrorMessageValue;
+        private Label lblStatusTransitionsLabel;
+        private Label lblStatusTransitionsValue;
 
         private OpenFileDialog openFileDialog;
     }

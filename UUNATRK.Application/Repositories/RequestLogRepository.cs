@@ -26,7 +26,17 @@ public class RequestLogRepository : IRequestLogRepository
     public async Task<RequestLog?> GetByRequestIdAsync(Guid requestId)
     {
         return await _context.RequestLogs
-            .FirstOrDefaultAsync(r => r.RequestId == requestId);
+            .Where(r => r.RequestId == requestId)
+            .OrderByDescending(r => r.CreatedAt)
+            .FirstOrDefaultAsync();
+    }
+
+    public async Task<List<RequestLog>> GetAllByRequestIdAsync(Guid requestId)
+    {
+        return await _context.RequestLogs
+            .Where(r => r.RequestId == requestId)
+            .OrderBy(r => r.CreatedAt)
+            .ToListAsync();
     }
 
     public void Update(RequestLog log)

@@ -505,21 +505,41 @@ namespace UUNATEK.WindowsForm
         {
             try
             {
-                var log = await _printApprovalService.GetRequestLogAsync(requestId);
-                if (log == null)
+                var logs = await _printApprovalService.GetAllLogsByRequestIdAsync(requestId);
+                if (logs == null || logs.Count == 0)
                 {
                     grpLogDetails.Visible = false;
                     return;
                 }
 
                 grpLogDetails.Visible = true;
-                lblLogRequestIdValue.Text = log.RequestId.ToString();
-                lblLogStatusValue.Text = log.Status.ToString();
-                lblLogCreatedAtValue.Text = log.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss");
-                lblLogUpdatedAtValue.Text = log.UpdatedAt.ToString("yyyy-MM-dd HH:mm:ss");
-                lblLogCompletedAtValue.Text = log.CompletedAt?.ToString("yyyy-MM-dd HH:mm:ss") ?? "N/A";
-                lblLogApprovalResponseValue.Text = log.ApprovalResponse ?? "N/A";
-                lblLogErrorMessageValue.Text = log.ErrorMessage ?? "N/A";
+                
+                var firstLog = logs.First();
+                var lastLog = logs.Last();
+                
+                lblLogRequestIdValue.Text = firstLog.RequestId.ToString();
+                lblLogStatusValue.Text = lastLog.Status.ToString();
+                lblLogCreatedAtValue.Text = firstLog.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss");
+                lblLogUpdatedAtValue.Text = lastLog.UpdatedAt.ToString("yyyy-MM-dd HH:mm:ss");
+                lblLogCompletedAtValue.Text = lastLog.CompletedAt?.ToString("yyyy-MM-dd HH:mm:ss") ?? "N/A";
+                
+                var approvalLog = logs.FirstOrDefault(l => !string.IsNullOrEmpty(l.ApprovalResponse));
+                lblLogApprovalResponseValue.Text = approvalLog?.ApprovalResponse ?? "N/A";
+                
+                var errorLog = logs.FirstOrDefault(l => !string.IsNullOrEmpty(l.ErrorMessage));
+                lblLogErrorMessageValue.Text = errorLog?.ErrorMessage ?? "N/A";
+                
+                var statusTransitions = string.Join("\r\n", logs.Select(l => 
+                    $"[{l.CreatedAt:HH:mm:ss.fff}] {l.Status}" + 
+                    (!string.IsNullOrEmpty(l.ErrorMessage) ? $" - Error: {l.ErrorMessage}" : "")));
+                
+                var transitionsLabel = grpLogDetails.Controls.OfType<Label>()
+                    .FirstOrDefault(l => l.Name == "lblStatusTransitionsValue");
+                
+                if (transitionsLabel != null)
+                {
+                    transitionsLabel.Text = statusTransitions;
+                }
             }
             catch (Exception ex)
             {

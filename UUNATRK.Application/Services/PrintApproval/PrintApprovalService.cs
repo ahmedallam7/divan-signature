@@ -39,32 +39,20 @@ public class PrintApprovalService : IPrintApprovalService
     public async Task<PrintWithApprovalResponse> PrintWithApprovalAsync(PrintApprovalRequest request)
     {
         var requestId = Guid.NewGuid();
-        RequestLog? log = null;
+        RequestLog? lastLog = null;
 
         try
         {
             _logger.LogInformation("Starting print with approval workflow. RequestId: {RequestId}", requestId);
 
-            log = new RequestLog
-            {
-                Id = Guid.NewGuid(),
-                RequestId = requestId,
-                Status = RequestStatus.New,
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
-            };
-            _requestLogRepository.Add(log);
-            await _unitOfWork.SaveChangesAsync();
+            await CreateLogEntryAsync(requestId, RequestStatus.New);
 
             _logger.LogInformation("Request log created. RequestId: {RequestId}", requestId);
 
             var paperImageBytes = await ReadStreamToByteArrayAsync(request.PaperImageStream);
             _logger.LogInformation("Paper image read: {Size} bytes. RequestId: {RequestId}", paperImageBytes.Length, requestId);
 
-            log.Status = RequestStatus.WaitingForApproval;
-            log.UpdatedAt = DateTime.UtcNow;
-            _requestLogRepository.Update(log);
-            await _unitOfWork.SaveChangesAsync();
+            await CreateLogEntryAsync(requestId, RequestStatus.WaitingForApproval);
 
             _logger.LogInformation("Requesting approval. RequestId: {RequestId}", requestId);
             var approvalResponse = await _approvalService.RequestApprovalAsync(paperImageBytes, requestId);
@@ -73,33 +61,25 @@ public class PrintApprovalService : IPrintApprovalService
             if (!approvalResponse.IsApproved)
                 shouldApprove = false;
 
-            log.ApprovalResponse = approvalResponse.Message;
-            log.Status = shouldApprove ? RequestStatus.Approved : RequestStatus.Rejected;
-            log.UpdatedAt = DateTime.UtcNow;
-            _requestLogRepository.Update(log);
-            await _unitOfWork.SaveChangesAsync();
+            lastLog = await CreateLogEntryAsync(
+                requestId, 
+                shouldApprove ? RequestStatus.Approved : RequestStatus.Rejected,
+                approvalResponse.Message);
 
             _logger.LogInformation("Approval decision: {Decision}. RequestId: {RequestId}", shouldApprove ? "Approved" : "Rejected", requestId);
 
             if (!shouldApprove)
             {
-                return await ExecuteRejectedPrintAsync(log, requestId);
+                return await ExecuteRejectedPrintAsync(requestId);
             }
 
-            return await ExecuteApprovedPrintAsync(log, request, requestId);
+            return await ExecuteApprovedPrintAsync(request, requestId);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error in print with approval workflow. RequestId: {RequestId}", requestId);
 
-            if (log != null)
-            {
-                log.Status = RequestStatus.Failed;
-                log.ErrorMessage = ex.Message;
-                log.UpdatedAt = DateTime.UtcNow;
-                _requestLogRepository.Update(log);
-                await _unitOfWork.SaveChangesAsync();
-            }
+            await CreateLogEntryAsync(requestId, RequestStatus.Failed, errorMessage: ex.Message);
             
             throw;
         }
@@ -110,27 +90,49 @@ public class PrintApprovalService : IPrintApprovalService
         return await _requestLogRepository.GetByRequestIdAsync(requestId);
     }
 
+    public async Task<List<RequestLog>> GetAllLogsByRequestIdAsync(Guid requestId)
+    {
+        return await _requestLogRepository.GetAllByRequestIdAsync(requestId);
+    }
+
     public async Task<List<RequestLog>> GetRecentRequestsAsync(int count = 10)
     {
         return await _requestLogRepository.GetRecentAsync(count);
     }
 
-    private async Task<PrintWithApprovalResponse> ExecuteRejectedPrintAsync(RequestLog log, Guid requestId)
+    private async Task<RequestLog> CreateLogEntryAsync(
+        Guid requestId, 
+        RequestStatus status, 
+        string? approvalResponse = null, 
+        string? errorMessage = null)
+    {
+        var log = new RequestLog
+        {
+            Id = Guid.NewGuid(),
+            RequestId = requestId,
+            Status = status,
+            ApprovalResponse = approvalResponse,
+            ErrorMessage = errorMessage,
+            CompletedAt = (status == RequestStatus.Completed || status == RequestStatus.Failed) ? DateTime.UtcNow : null,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+        
+        _requestLogRepository.Add(log);
+        await _unitOfWork.SaveChangesAsync();
+        
+        return log;
+    }
+
+    private async Task<PrintWithApprovalResponse> ExecuteRejectedPrintAsync(Guid requestId)
     {
         _logger.LogInformation("Executing void print (rejected). RequestId: {RequestId}", requestId);
 
-        log.Status = RequestStatus.Voided;
-        log.UpdatedAt = DateTime.UtcNow;
-        _requestLogRepository.Update(log);
-        await _unitOfWork.SaveChangesAsync();
+        await CreateLogEntryAsync(requestId, RequestStatus.Voided);
 
         var voidResult = await _printerService.VoidPrint();
         
-        log.Status = RequestStatus.Completed;
-        log.CompletedAt = DateTime.UtcNow;
-        log.UpdatedAt = DateTime.UtcNow;
-        _requestLogRepository.Update(log);
-        await _unitOfWork.SaveChangesAsync();
+        await CreateLogEntryAsync(requestId, RequestStatus.Completed);
 
         _logger.LogInformation("Void print completed. RequestId: {RequestId}", requestId);
 
@@ -146,7 +148,6 @@ public class PrintApprovalService : IPrintApprovalService
     }
 
     private async Task<PrintWithApprovalResponse> ExecuteApprovedPrintAsync(
-        RequestLog log, 
         PrintApprovalRequest request, 
         Guid requestId)
     {
@@ -159,21 +160,14 @@ public class PrintApprovalService : IPrintApprovalService
             var errorMessage = "Failed to convert SVG to G-code. No drawable paths found.";
             _logger.LogError(errorMessage + " RequestId: {RequestId}", requestId);
 
-            log.Status = RequestStatus.Failed;
-            log.ErrorMessage = errorMessage;
-            log.UpdatedAt = DateTime.UtcNow;
-            _requestLogRepository.Update(log);
-            await _unitOfWork.SaveChangesAsync();
+            await CreateLogEntryAsync(requestId, RequestStatus.Failed, errorMessage: errorMessage);
 
             throw new InvalidOperationException(errorMessage);
         }
 
         _logger.LogInformation("G-code generated: {Count} commands. RequestId: {RequestId}", gcode.Count, requestId);
 
-        log.Status = RequestStatus.Printing;
-        log.UpdatedAt = DateTime.UtcNow;
-        _requestLogRepository.Update(log);
-        await _unitOfWork.SaveChangesAsync();
+        await CreateLogEntryAsync(requestId, RequestStatus.Printing);
 
         PrintResponse? printResult = null;
         int attempt = 0;
@@ -210,25 +204,14 @@ public class PrintApprovalService : IPrintApprovalService
             var errorMessage = $"Print failed after {attempt} attempts: {lastException?.Message}";
             _logger.LogError(errorMessage + " RequestId: {RequestId}", requestId);
 
-            log.Status = RequestStatus.Failed;
-            log.ErrorMessage = errorMessage;
-            log.UpdatedAt = DateTime.UtcNow;
-            _requestLogRepository.Update(log);
-            await _unitOfWork.SaveChangesAsync();
+            await CreateLogEntryAsync(requestId, RequestStatus.Failed, errorMessage: errorMessage);
 
             throw lastException!;
         }
 
-        log.Status = RequestStatus.Printed;
-        log.UpdatedAt = DateTime.UtcNow;
-        _requestLogRepository.Update(log);
-        await _unitOfWork.SaveChangesAsync();
+        await CreateLogEntryAsync(requestId, RequestStatus.Printed);
 
-        log.Status = RequestStatus.Completed;
-        log.CompletedAt = DateTime.UtcNow;
-        log.UpdatedAt = DateTime.UtcNow;
-        _requestLogRepository.Update(log);
-        await _unitOfWork.SaveChangesAsync();
+        await CreateLogEntryAsync(requestId, RequestStatus.Completed);
 
         _logger.LogInformation("Print completed successfully. RequestId: {RequestId}", requestId);
 
