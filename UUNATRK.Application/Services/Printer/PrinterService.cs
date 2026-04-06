@@ -5,7 +5,7 @@ using UUNATRK.Application.Models;
 
 namespace UUNATRK.Application.Services.Printer
 {
-    public class PrinterService(IOptions<PrinterSettings> settings)
+    public class PrinterService(IOptions<PrinterSettings> settings) : IPrinterService
     {
         private readonly PrinterSettings _settings = settings.Value;
         private SerialPort? _port;

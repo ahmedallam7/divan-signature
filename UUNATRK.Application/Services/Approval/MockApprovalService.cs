@@ -11,12 +11,12 @@ public class MockApprovalService : IApprovalService
         _settings = settings.Value;
     }
 
-    public async Task<ApprovalResponse> RequestApprovalAsync(string imagePath, Guid requestId)
+    public async Task<ApprovalResponse> RequestApprovalAsync(byte[] paperImageBytes, Guid requestId)
     {
         await Task.Delay(500);
 
         Console.WriteLine($"[MockApprovalService] Processing approval request for RequestId: {requestId}");
-        Console.WriteLine($"[MockApprovalService] Image path: {imagePath}");
+        Console.WriteLine($"[MockApprovalService] Image size: {paperImageBytes.Length} bytes");
         
         return new ApprovalResponse(
             IsApproved: true,

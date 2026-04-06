@@ -2,7 +2,7 @@ namespace UUNATRK.Application.Services.Approval;
 
 public interface IApprovalService
 {
-    Task<ApprovalResponse> RequestApprovalAsync(string imagePath, Guid requestId);
+    Task<ApprovalResponse> RequestApprovalAsync(byte[] paperImageBytes, Guid requestId);
 }
 
 public record ApprovalResponse(

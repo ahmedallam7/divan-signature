@@ -22,8 +22,6 @@ public class ApplicationDbContext : DbContext, IUnitOfWork
             entity.HasIndex(e => e.Status);
             entity.HasIndex(e => e.CreatedAt);
 
-            entity.Property(e => e.PaperImagePath).HasMaxLength(500);
-            entity.Property(e => e.SignatureSvgPath).HasMaxLength(500);
             entity.Property(e => e.Status).IsRequired();
             entity.Property(e => e.CreatedAt).IsRequired();
             entity.Property(e => e.UpdatedAt).IsRequired();

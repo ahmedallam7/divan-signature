@@ -6,8 +6,6 @@ public class RequestLog
 {
     public Guid Id { get; set; }
     public Guid RequestId { get; set; }
-    public string? PaperImagePath { get; set; }
-    public string? SignatureSvgPath { get; set; }
     public RequestStatus Status { get; set; }
     public string? ApprovalResponse { get; set; }
     public string? ErrorMessage { get; set; }

@@ -1,14 +1,9 @@
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Options;
 using System.Text.Json;
-using UUNATEK.Domain.Entities;
-using UUNATEK.Domain.Enums;
-using UUNATRK.Application.Data;
 using UUNATRK.Application.Enums;
 using UUNATRK.Application.Models;
-using UUNATRK.Application.Repositories;
-using UUNATRK.Application.Services.Approval;
 using UUNATRK.Application.Services.Printer;
+using UUNATRK.Application.Services.PrintApproval;
 
 namespace UUNATEK.API.Controllers;
 
@@ -17,26 +12,14 @@ namespace UUNATEK.API.Controllers;
 public class PrinterController : ControllerBase
 {
     private readonly PrinterService _printer;
-    private readonly IRequestLogRepository _requestLogRepository;
-    private readonly IUnitOfWork _unitOfWork;
-    private readonly IApprovalService _approvalService;
-    private readonly FileStorageSettings _fileStorageSettings;
-    private readonly PrintRetrySettings _printRetrySettings;
+    private readonly IPrintApprovalService _printApprovalService;
 
     public PrinterController(
         PrinterService printer,
-        IRequestLogRepository requestLogRepository,
-        IUnitOfWork unitOfWork,
-        IApprovalService approvalService,
-        IOptions<FileStorageSettings> fileStorageSettings,
-        IOptions<PrintRetrySettings> printRetrySettings)
+        IPrintApprovalService printApprovalService)
     {
         _printer = printer;
-        _requestLogRepository = requestLogRepository;
-        _unitOfWork = unitOfWork;
-        _approvalService = approvalService;
-        _fileStorageSettings = fileStorageSettings.Value;
-        _printRetrySettings = printRetrySettings.Value;
+        _printApprovalService = printApprovalService;
     }
 
 
@@ -160,9 +143,6 @@ public class PrinterController : ControllerBase
         IFormFile signatureSvg,
         [FromForm] string printRequestJson)
     {
-        var requestId = Guid.NewGuid();
-        RequestLog? log = null;
-
         try
         {
             if (!_printer.IsOpen)
@@ -175,168 +155,56 @@ public class PrinterController : ControllerBase
             if (printWithApprovalReq == null)
                 return BadRequest(new { Message = "Invalid printRequest JSON." });
 
-            log = new RequestLog
-            {
-                Id = Guid.NewGuid(),
-                RequestId = requestId,
-                Status = RequestStatus.New,
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
-            };
-            _requestLogRepository.Add(log);
-            await _unitOfWork.SaveChangesAsync();
-
-            string? imagePath = null;
-            if (paperImage != null && paperImage.Length > 0)
-            {
-                imagePath = await SaveFile(paperImage, requestId, "images", "jpg");
-            }
-            else if (!string.IsNullOrEmpty(paperImageBase64))
-            {
-                imagePath = await SaveBase64File(paperImageBase64, requestId, "images", "jpg");
-            }
-
             if (signatureSvg == null || signatureSvg.Length == 0)
                 return BadRequest(new { Message = "No signature SVG file provided." });
 
-            var svgPath = await SaveFile(signatureSvg, requestId, "svgs", "svg");
-
-            log.PaperImagePath = imagePath;
-            log.SignatureSvgPath = svgPath;
-            log.Status = RequestStatus.WaitingForApproval;
-            log.UpdatedAt = DateTime.UtcNow;
-            _requestLogRepository.Update(log);
-            await _unitOfWork.SaveChangesAsync();
-
-            var approvalResponse = await _approvalService.RequestApprovalAsync(imagePath ?? "N/A", requestId);
-            
-            bool shouldApprove = printWithApprovalReq.ShouldApprove;
-            if (!approvalResponse.IsApproved)
-                shouldApprove = false;
-
-            log.ApprovalResponse = approvalResponse.Message;
-            log.Status = shouldApprove ? RequestStatus.Approved : RequestStatus.Rejected;
-            log.UpdatedAt = DateTime.UtcNow;
-            _requestLogRepository.Update(log);
-            await _unitOfWork.SaveChangesAsync();
-
-            if (!shouldApprove)
+            Stream? paperImageStream = null;
+            if (paperImage != null && paperImage.Length > 0)
             {
-                log.Status = RequestStatus.Voided;
-                log.UpdatedAt = DateTime.UtcNow;
-                _requestLogRepository.Update(log);
-                await _unitOfWork.SaveChangesAsync();
+                paperImageStream = paperImage.OpenReadStream();
+            }
+            else if (!string.IsNullOrEmpty(paperImageBase64))
+            {
+                var base64Data = paperImageBase64.Contains(",") ? paperImageBase64.Split(',')[1] : paperImageBase64;
+                var bytes = Convert.FromBase64String(base64Data);
+                paperImageStream = new MemoryStream(bytes);
+            }
 
-                var voidResult = await _printer.VoidPrint();
-                
-                log.Status = RequestStatus.Completed;
-                log.CompletedAt = DateTime.UtcNow;
-                log.UpdatedAt = DateTime.UtcNow;
-                _requestLogRepository.Update(log);
-                await _unitOfWork.SaveChangesAsync();
-
-                return Ok(new PrintWithApprovalResponse
+            using (paperImageStream)
+            using (var svgStream = signatureSvg.OpenReadStream())
+            {
+                var request = new PrintApprovalRequest
                 {
-                    RequestId = requestId,
-                    Status = "Completed",
-                    WasApproved = false,
-                    WasPrinted = false,
-                    Message = "Request rejected - void print executed (paper ejected without printing).",
-                    CommandsSent = 0
-                });
+                    PaperImageStream = paperImageStream,
+                    PaperImageFileName = paperImage?.FileName,
+                    SignatureSvgStream = svgStream,
+                    SignatureSvgFileName = signatureSvg.FileName,
+                    PrintSettings = printWithApprovalReq.PrintSettings,
+                    ShouldApprove = printWithApprovalReq.ShouldApprove
+                };
+
+                var response = await _printApprovalService.PrintWithApprovalAsync(request);
+                return Ok(response);
             }
-
-            using var svgStream = System.IO.File.OpenRead(svgPath);
-            var (gcode, error) = await ConvertSvgStream(svgStream, printWithApprovalReq.PrintSettings);
-            
-            if (error != null)
-            {
-                log.Status = RequestStatus.Failed;
-                log.ErrorMessage = "Failed to convert SVG to G-code.";
-                log.UpdatedAt = DateTime.UtcNow;
-                _requestLogRepository.Update(log);
-                await _unitOfWork.SaveChangesAsync();
-                return error;
-            }
-
-            log.Status = RequestStatus.Printing;
-            log.UpdatedAt = DateTime.UtcNow;
-            _requestLogRepository.Update(log);
-            await _unitOfWork.SaveChangesAsync();
-
-            PrintResponse? printResult = null;
-            int attempt = 0;
-            Exception? lastException = null;
-
-            while (attempt < _printRetrySettings.MaxRetries)
-            {
-                attempt++;
-                try
-                {
-                    printResult = await _printer.Print(gcode!);
-                    break;
-                }
-                catch (Exception ex)
-                {
-                    lastException = ex;
-                    
-                    if (attempt < _printRetrySettings.MaxRetries)
-                    {
-                        await Task.Delay(_printRetrySettings.RetryDelayMs);
-                    }
-                }
-            }
-
-            if (printResult == null)
-            {
-                log.Status = RequestStatus.Failed;
-                log.ErrorMessage = $"Print failed after {attempt} attempts: {lastException?.Message}";
-                log.UpdatedAt = DateTime.UtcNow;
-                _requestLogRepository.Update(log);
-                await _unitOfWork.SaveChangesAsync();
-                throw lastException!;
-            }
-
-            log.Status = RequestStatus.Printed;
-            log.UpdatedAt = DateTime.UtcNow;
-            _requestLogRepository.Update(log);
-            await _unitOfWork.SaveChangesAsync();
-
-            log.Status = RequestStatus.Completed;
-            log.CompletedAt = DateTime.UtcNow;
-            log.UpdatedAt = DateTime.UtcNow;
-            _requestLogRepository.Update(log);
-            await _unitOfWork.SaveChangesAsync();
-
-            return Ok(new PrintWithApprovalResponse
-            {
-                RequestId = requestId,
-                Status = "Completed",
-                WasApproved = true,
-                WasPrinted = true,
-                Message = "Print completed successfully.",
-                CommandsSent = printResult.CommandsSent
-            });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { Message = ex.Message });
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { Message = ex.Message });
         }
         catch (Exception ex)
         {
-            if (log != null)
-            {
-                log.Status = RequestStatus.Failed;
-                log.ErrorMessage = ex.Message;
-                log.UpdatedAt = DateTime.UtcNow;
-                _requestLogRepository.Update(log);
-                await _unitOfWork.SaveChangesAsync();
-            }
-            
             return StatusCode(500, new { Message = $"Error: {ex.Message}" });
         }
     }
 
     [HttpGet("requests/{requestId}")]
-    public async Task<ActionResult<RequestLog>> GetRequestLog(Guid requestId)
+    public async Task<ActionResult> GetRequestLog(Guid requestId)
     {
-        var log = await _requestLogRepository.GetByRequestIdAsync(requestId);
+        var log = await _printApprovalService.GetRequestLogAsync(requestId);
         if (log == null)
             return NotFound(new { Message = $"Request log with ID {requestId} not found." });
 
@@ -373,59 +241,5 @@ public class PrinterController : ControllerBase
             return (null, BadRequest(new { Message = "No drawable paths found. If SVG contains text, convert to path first (Inkscape: Path > Object to Path)." }));
 
         return (gcode, null);
-    }
-
-    private async Task<(List<string>? gcode, ActionResult? error)> ConvertSvgStream(
-        Stream svgStream, PrintRequest req)
-    {
-        if (req.Scale < 1)
-            return (null, BadRequest(new { Message = "Scale must be at least 1." }));
-
-        if (req.Rotation < 0 || req.Rotation > 360)
-            return (null, BadRequest(new { Message = "Rotation must be between 0 and 360." }));
-
-        if (req.Paper.HasValue)
-        {
-            var (pw, ph) = PaperSizes.GetSizeMm(req.Paper.Value);
-            req.Width = $"{pw}mm";
-            req.Height = $"{ph}mm";
-        }
-
-        var gcode = SvgConverter.ConvertToGCode(svgStream, req);
-
-        if (gcode.Count == 0)
-            return (null, BadRequest(new { Message = "No drawable paths found. If SVG contains text, convert to path first (Inkscape: Path > Object to Path)." }));
-
-        return (gcode, null);
-    }
-
-    private async Task<string> SaveFile(IFormFile file, Guid requestId, string subfolder, string extension)
-    {
-        var uploadDir = Path.Combine(_fileStorageSettings.UploadPath, subfolder);
-        Directory.CreateDirectory(uploadDir);
-
-        var fileName = $"{requestId}.{extension}";
-        var filePath = Path.Combine(uploadDir, fileName);
-
-        using var stream = new FileStream(filePath, FileMode.Create);
-        await file.CopyToAsync(stream);
-
-        return filePath;
-    }
-
-    private async Task<string> SaveBase64File(string base64String, Guid requestId, string subfolder, string extension)
-    {
-        var uploadDir = Path.Combine(_fileStorageSettings.UploadPath, subfolder);
-        Directory.CreateDirectory(uploadDir);
-
-        var fileName = $"{requestId}.{extension}";
-        var filePath = Path.Combine(uploadDir, fileName);
-
-        var base64Data = base64String.Contains(",") ? base64String.Split(',')[1] : base64String;
-        var bytes = Convert.FromBase64String(base64Data);
-
-        await System.IO.File.WriteAllBytesAsync(filePath, bytes);
-
-        return filePath;
     }
 }
