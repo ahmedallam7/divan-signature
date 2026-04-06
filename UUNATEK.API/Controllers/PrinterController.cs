@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using UUNATRK.Application.Enums;
 using UUNATRK.Application.Models;
 using UUNATRK.Application.Services.Printer;
 
@@ -15,6 +16,73 @@ public class PrinterController : ControllerBase
         _printer = printer;
     }
 
+    // ── Connection ─────────────────────────────────────────────
+
+    [HttpPost("connect")]
+    public ActionResult Connect(
+        [FromQuery] string? comPort = null,
+        [FromQuery] int? baudRate = null)
+    {
+        if (_printer.IsOpen)
+            return Conflict(new { Message = $"Already connected to {_printer.PortName}. Disconnect first." });
+
+        var port = comPort ?? _printer.DefaultComPort;
+        var baud = baudRate ?? _printer.DefaultBaudRate;
+
+        try
+        {
+            _printer.OpenPort(port, baud);
+            return Ok(new { Message = $"Connected to {port} at {baud} baud." });
+        }
+        catch (Exception ex)
+        {
+            return BadRequest(new { Message = $"Failed to connect: {ex.Message}" });
+        }
+    }
+
+    [HttpPost("disconnect")]
+    public ActionResult Disconnect()
+    {
+        if (!_printer.IsOpen)
+            return Conflict(new { Message = "Not connected." });
+
+        if (_printer.IsPrinting)
+            return Conflict(new { Message = "Cannot disconnect while printing." });
+
+        _printer.ClosePort();
+        return Ok(new { Message = "Disconnected." });
+    }
+
+    // ── Status ─────────────────────────────────────────────────
+
+    [HttpGet("status")]
+    public ActionResult<PrinterStatus> GetStatus()
+    {
+        return Ok(_printer.GetStatus());
+    }
+
+    // ── G-code Preview ─────────────────────────────────────────
+
+    [HttpPost("generate")]
+    [Consumes("multipart/form-data")]
+    public async Task<ActionResult> Generate(
+        IFormFile svg,
+        [FromForm] PrintRequest req)
+    {
+        var (gcode, error) = await ConvertSvg(svg, req);
+
+        if (error != null)
+            return error;
+
+        return Ok(new
+        {
+            Message = $"Generated {gcode!.Count} G-code commands.",
+            CommandCount = gcode.Count,
+            GCode = gcode
+        });
+    }
+
+    // ── Print ──────────────────────────────────────────────────
 
     [HttpPost("print")]
     [Consumes("multipart/form-data")]
@@ -22,37 +90,20 @@ public class PrinterController : ControllerBase
         IFormFile svg,
         [FromForm] PrintRequest req)
     {
-        Console.WriteLine($"=== PRINT REQUEST ===");
-        Console.WriteLine($"File: {svg.FileName}, Size: {svg.Length} bytes");
-        Console.WriteLine($"Settings: X={req.XPosition}, Y={req.YPosition}, Scale={req.Scale}, Rotation={req.Rotation}");
-        Console.WriteLine($"Flips: InvertX={req.InvertX}, InvertY={req.InvertY}");
+        if (!_printer.IsOpen)
+            return BadRequest(new { Message = "Printer is not connected. Call POST /printer/connect first." });
 
         if (_printer.IsPrinting)
             return Conflict(new { Message = "Printer is busy." });
 
-        using var stream = new MemoryStream();
-        await svg.CopyToAsync(stream);
-        stream.Position = 0;
+        var (gcode, error) = await ConvertSvg(svg, req);
 
-        var gcode = SvgConverter.ConvertToGCode(stream, req);
+        if (error != null)
+            return error;
 
-        Console.WriteLine($"Generated {gcode.Count} G-code lines");
-        if (gcode.Count > 0)
-        {
-            Console.WriteLine($"First command: {gcode[0]}");
-            Console.WriteLine($"Last command: {gcode[^1]}");
-        }
-        else
-        {
-            Console.WriteLine("!!! WARNING: G-code list is EMPTY");
-        }
-
-        var result = await _printer.Print(gcode);
-
+        var result = await _printer.Print(gcode!);
         return Ok(result);
     }
-
-
 
     [HttpPost("print/bulk")]
     [Consumes("multipart/form-data")]
@@ -61,27 +112,56 @@ public class PrinterController : ControllerBase
         [FromForm] int copies,
         [FromForm] PrintRequest req)
     {
+        if (!_printer.IsOpen)
+            return BadRequest(new { Message = "Printer is not connected. Call POST /printer/connect first." });
+
         if (_printer.IsPrinting)
             return Conflict(new { Message = "Printer is busy." });
 
         if (copies < 1 || copies > 100)
             return BadRequest(new { Message = "Copies must be between 1 and 100." });
 
+        var (gcode, error) = await ConvertSvg(svg, req);
+
+        if (error != null)
+            return error;
+
+        var result = await _printer.BulkPrint(gcode!, copies);
+        return Ok(result);
+    }
+
+    // ── Shared helpers ─────────────────────────────────────────
+
+    private async Task<(List<string>? gcode, ActionResult? error)> ConvertSvg(
+        IFormFile svg, PrintRequest req)
+    {
+        // Validate input
+        if (svg == null || svg.Length == 0)
+            return (null, BadRequest(new { Message = "No SVG file provided." }));
+
+        if (req.Scale < 1)
+            return (null, BadRequest(new { Message = "Scale must be at least 1." }));
+
+        if (req.Rotation < 0 || req.Rotation > 360)
+            return (null, BadRequest(new { Message = "Rotation must be between 0 and 360." }));
+
+        // If Paper enum is set, override Width/Height with paper dimensions
+        if (req.Paper.HasValue)
+        {
+            var (pw, ph) = PaperSizes.GetSizeMm(req.Paper.Value);
+            req.Width = $"{pw}mm";
+            req.Height = $"{ph}mm";
+        }
+
         using var stream = new MemoryStream();
         await svg.CopyToAsync(stream);
         stream.Position = 0;
 
         var gcode = SvgConverter.ConvertToGCode(stream, req);
-        var result = await _printer.BulkPrint(gcode, copies);
 
-        return Ok(result);
-    }
+        if (gcode.Count == 0)
+            return (null, BadRequest(new { Message = "No drawable paths found. If SVG contains text, convert to path first (Inkscape: Path > Object to Path)." }));
 
-
-
-    [HttpGet("status")]
-    public ActionResult<PrinterStatus> GetStatus()
-    {
-        return Ok(_printer.GetStatus());
+        return (gcode, null);
     }
 }

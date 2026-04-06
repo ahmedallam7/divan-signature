@@ -197,6 +197,57 @@ namespace UUNATEK.WindowsForm
             return double.TryParse(clean, out var val) ? val : 0;
         }
 
+        // ── Generate G-code Preview ──────────────────────────────
+
+        private void btnGenerateGCode_Click(object? sender, EventArgs e)
+        {
+            if (string.IsNullOrEmpty(_selectedFilePath))
+            {
+                MessageBox.Show("Please select an SVG file first.", "No File Selected",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            try
+            {
+                var paper = cboPaper.SelectedItem is Paper p ? p : Paper.A4;
+                var (pw, ph) = PaperSizes.GetSizeMm(paper);
+
+                var printRequest = new PrintRequest
+                {
+                    Width = $"{pw}mm",
+                    Height = $"{ph}mm",
+                    XPosition = txtXPosition.Text,
+                    YPosition = txtYPosition.Text,
+                    Scale = (int)nudScale.Value,
+                    Rotation = (int)nudRotation.Value,
+                    InvertX = chkInvertX.Checked,
+                    InvertY = chkInvertY.Checked
+                };
+
+                using var stream = File.OpenRead(_selectedFilePath);
+                var gcode = SvgConverter.ConvertToGCode(stream, printRequest);
+
+                if (gcode.Count == 0)
+                {
+                    txtGCodePreview.Text = "";
+                    lblResult.ForeColor = Color.OrangeRed;
+                    lblResult.Text = "No drawable paths found. Convert text to path in Inkscape first.";
+                    return;
+                }
+
+                txtGCodePreview.Text = string.Join(Environment.NewLine, gcode);
+                lblResult.ForeColor = Color.Green;
+                lblResult.Text = $"Generated {gcode.Count} G-code commands.";
+            }
+            catch (Exception ex)
+            {
+                txtGCodePreview.Text = "";
+                lblResult.ForeColor = Color.Red;
+                lblResult.Text = $"Error: {ex.Message}";
+            }
+        }
+
         // ── Print ──────────────────────────────────────────────────
 
         private async void btnPrint_Click(object? sender, EventArgs e)
@@ -240,6 +291,13 @@ namespace UUNATEK.WindowsForm
 
                 using var stream = File.OpenRead(_selectedFilePath);
                 var gcode = SvgConverter.ConvertToGCode(stream, printRequest);
+
+                if (gcode.Count == 0)
+                {
+                    lblResult.ForeColor = Color.OrangeRed;
+                    lblResult.Text = "No drawable paths found. If SVG has text, convert to path in Inkscape first (Path > Object to Path).";
+                    return;
+                }
 
                 var response = await _printer.Print(gcode);
 

@@ -1,24 +1,39 @@
 using System.IO.Ports;
 using System.Text;
+using Microsoft.Extensions.Options;
 using UUNATRK.Application.Models;
 
 namespace UUNATRK.Application.Services.Printer
 {
     public class PrinterService
     {
+        private readonly PrinterSettings _settings;
         private SerialPort? _port;
         private bool _isPrinting;
+
+        public PrinterService(IOptions<PrinterSettings> settings)
+        {
+            _settings = settings.Value;
+        }
 
         public bool IsOpen => _port?.IsOpen ?? false;
         public string PortName => _port?.PortName ?? "N/A";
         public bool IsPrinting => _isPrinting;
+        public string DefaultComPort => _settings.ComPort;
+        public int DefaultBaudRate => _settings.BaudRate;
 
-        public void OpenPort(string comPort = "COM5", int baudRate = 250000)
+        public void OpenPort(string? comPort = null, int? baudRate = null)
         {
+            var port = comPort ?? _settings.ComPort;
+            var baud = baudRate ?? _settings.BaudRate;
+
+            if (_port?.IsOpen == true)
+                _port.Close();
+
             _port = new SerialPort
             {
-                PortName = comPort,
-                BaudRate = baudRate,
+                PortName = port,
+                BaudRate = baud,
                 Parity = Parity.None,
                 DataBits = 8,
                 StopBits = StopBits.One,
@@ -34,6 +49,16 @@ namespace UUNATRK.Application.Services.Printer
             Thread.Sleep(1500);
             _port.DiscardInBuffer();
             _port.DiscardOutBuffer();
+        }
+
+        public void ClosePort()
+        {
+            if (_port?.IsOpen == true)
+            {
+                _port.Close();
+                _port.Dispose();
+            }
+            _port = null;
         }
 
         public PrinterStatus GetStatus() => new()

@@ -57,6 +57,8 @@ namespace UUNATEK.WindowsForm
             chkInvertX = new CheckBox();
             chkInvertY = new CheckBox();
             btnPrint = new Button();
+            btnGenerateGCode = new Button();
+            txtGCodePreview = new TextBox();
             lblResult = new Label();
             openFileDialog = new OpenFileDialog();
             grpConnection.SuspendLayout();
@@ -257,11 +259,13 @@ namespace UUNATEK.WindowsForm
             grpPrintSettings.Controls.Add(nudRotation);
             grpPrintSettings.Controls.Add(chkInvertX);
             grpPrintSettings.Controls.Add(chkInvertY);
+            grpPrintSettings.Controls.Add(txtGCodePreview);
+            grpPrintSettings.Controls.Add(btnGenerateGCode);
             grpPrintSettings.Controls.Add(btnPrint);
             grpPrintSettings.Controls.Add(lblResult);
             grpPrintSettings.Location = new Point(575, 125);
             grpPrintSettings.Name = "grpPrintSettings";
-            grpPrintSettings.Size = new Size(300, 485);
+            grpPrintSettings.Size = new Size(300, 505);
             grpPrintSettings.TabIndex = 3;
             grpPrintSettings.TabStop = false;
             grpPrintSettings.Text = "Print Settings";
@@ -361,11 +365,34 @@ namespace UUNATEK.WindowsForm
             chkInvertY.Text = "Invert Y";
             chkInvertY.CheckedChanged += OnSettingChanged;
             // 
+            // txtGCodePreview
+            // 
+            txtGCodePreview.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+            txtGCodePreview.Location = new Point(15, 205);
+            txtGCodePreview.Multiline = true;
+            txtGCodePreview.Name = "txtGCodePreview";
+            txtGCodePreview.ReadOnly = true;
+            txtGCodePreview.ScrollBars = ScrollBars.Vertical;
+            txtGCodePreview.Font = new Font("Consolas", 8F);
+            txtGCodePreview.BackColor = Color.White;
+            txtGCodePreview.Size = new Size(270, 185);
+            txtGCodePreview.TabIndex = 13;
+            // 
+            // btnGenerateGCode
+            // 
+            btnGenerateGCode.Anchor = AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+            btnGenerateGCode.Location = new Point(15, 400);
+            btnGenerateGCode.Name = "btnGenerateGCode";
+            btnGenerateGCode.Size = new Size(270, 30);
+            btnGenerateGCode.TabIndex = 12;
+            btnGenerateGCode.Text = "Generate G-code";
+            btnGenerateGCode.Click += btnGenerateGCode_Click;
+            // 
             // btnPrint
             // 
             btnPrint.Anchor = AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
             btnPrint.Font = new Font("Segoe UI", 10F, FontStyle.Bold);
-            btnPrint.Location = new Point(15, 435);
+            btnPrint.Location = new Point(15, 440);
             btnPrint.Name = "btnPrint";
             btnPrint.Size = new Size(270, 35);
             btnPrint.TabIndex = 10;
@@ -376,7 +403,7 @@ namespace UUNATEK.WindowsForm
             // 
             lblResult.Anchor = AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
             lblResult.AutoEllipsis = true;
-            lblResult.Location = new Point(15, 415);
+            lblResult.Location = new Point(15, 478);
             lblResult.Name = "lblResult";
             lblResult.Size = new Size(270, 17);
             lblResult.TabIndex = 11;
@@ -447,8 +474,10 @@ namespace UUNATEK.WindowsForm
         private CheckBox chkInvertX;
         private CheckBox chkInvertY;
 
+        private Button btnGenerateGCode;
         private Button btnPrint;
         private Label lblResult;
+        private TextBox txtGCodePreview;
 
         private OpenFileDialog openFileDialog;
     }

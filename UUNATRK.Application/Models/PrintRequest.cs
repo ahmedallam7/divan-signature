@@ -1,7 +1,10 @@
+using UUNATRK.Application.Enums;
+
 namespace UUNATRK.Application.Models
 {
     public class PrintRequest
     {
+        public Paper? Paper { get; set; }
         public string Width { get; set; } = "210mm";
         public string Height { get; set; } = "297mm";
         public string XPosition { get; set; } = "50mm";
