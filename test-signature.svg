@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="200" height="100" viewBox="0 0 200 100">
+  <path d="M 10 50 Q 50 10, 90 50 T 170 50" stroke="black" stroke-width="2" fill="none"/>
+  <text x="10" y="90" font-family="Arial" font-size="14" fill="black">Test Signature</text>
+</svg>

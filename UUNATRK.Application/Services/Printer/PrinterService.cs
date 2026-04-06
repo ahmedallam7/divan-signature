@@ -5,16 +5,11 @@ using UUNATRK.Application.Models;
 
 namespace UUNATRK.Application.Services.Printer
 {
-    public class PrinterService
+    public class PrinterService(IOptions<PrinterSettings> settings)
     {
-        private readonly PrinterSettings _settings;
+        private readonly PrinterSettings _settings = settings.Value;
         private SerialPort? _port;
         private bool _isPrinting;
-
-        public PrinterService(IOptions<PrinterSettings> settings)
-        {
-            _settings = settings.Value;
-        }
 
         public bool IsOpen => _port?.IsOpen ?? false;
         public string PortName => _port?.PortName ?? "N/A";
@@ -110,6 +105,20 @@ namespace UUNATRK.Application.Services.Printer
             finally { _isPrinting = false; }
         }
 
+        public async Task<PrintResponse> VoidPrint()
+        {
+            if (_isPrinting)
+                throw new InvalidOperationException("Printer is busy.");
+
+            _isPrinting = true;
+            try
+            {
+                await Task.Run(() => ExecuteVoidCycle());
+                return new PrintResponse { Message = "Void print complete - paper ejected without printing.", CommandsSent = 0 };
+            }
+            finally { _isPrinting = false; }
+        }
+
         private void ExecutePrintCycle(List<string> gcode)
         {
             try
@@ -158,6 +167,40 @@ namespace UUNATRK.Application.Services.Printer
                 Console.WriteLine("=== Starting eject sequence ===");
                 EjectPaper();
                 Console.WriteLine("=== Print cycle complete ===");
+            }
+        }
+
+        private void ExecuteVoidCycle()
+        {
+            try
+            {
+                Console.WriteLine("=== Starting VOID cycle (no printing) ===");
+
+                Console.WriteLine("Sending M998R handshake...");
+                Send("M998R");
+
+                Console.WriteLine("Waiting for 'paper ready'...");
+                WaitFor("paper ready", 60);
+                Console.WriteLine("Paper ready!");
+
+                Console.WriteLine("Sending init commands (pen stays UP)...");
+                Send("G92 X9.0 Y-56.0 Z0");
+                Send("G21");
+                Send("G90");
+                Send("G1 E0.0 F4000");
+                Console.WriteLine("Init complete - no printing, pen remains up");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"!!! ERROR during void cycle: {ex.Message}");
+                Console.WriteLine($"Stack trace: {ex.StackTrace}");
+                throw;
+            }
+            finally
+            {
+                Console.WriteLine("=== Starting eject sequence ===");
+                EjectPaper();
+                Console.WriteLine("=== Void cycle complete ===");
             }
         }
 
