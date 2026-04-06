@@ -1,6 +1,8 @@
+using UUNATEK.Domain.Entities;
 using UUNATRK.Application.Enums;
 using UUNATRK.Application.Models;
 using UUNATRK.Application.Services.Printer;
+using UUNATRK.Application.Services.PrintApproval;
 using Svg;
 
 namespace UUNATEK.WindowsForm
@@ -8,11 +10,15 @@ namespace UUNATEK.WindowsForm
     public partial class Form1 : Form
     {
         private readonly PrinterService _printer;
+        private readonly IPrintApprovalService _printApprovalService;
         private string? _selectedFilePath;
+        private string? _paperImagePath;
+        private string? _signatureSvgPath;
 
-        public Form1(PrinterService printer)
+        public Form1(PrinterService printer, IPrintApprovalService printApprovalService)
         {
             _printer = printer;
+            _printApprovalService = printApprovalService;
             InitializeComponent();
 
             // Populate paper dropdown (exclude Custom for now)
@@ -314,6 +320,240 @@ namespace UUNATEK.WindowsForm
                 btnPrint.Enabled = true;
                 btnPrint.Text = "Print";
                 RefreshStatus();
+            }
+        }
+
+        private void btnBrowsePaperImage_Click(object? sender, EventArgs e)
+        {
+            using var dialog = new OpenFileDialog
+            {
+                Filter = "Image Files|*.jpg;*.jpeg;*.png;*.bmp|All Files|*.*",
+                Title = "Select Paper Image"
+            };
+
+            if (dialog.ShowDialog() == DialogResult.OK)
+            {
+                _paperImagePath = dialog.FileName;
+                txtPaperImagePath.Text = Path.GetFileName(_paperImagePath);
+                LoadPaperImagePreview(_paperImagePath);
+            }
+        }
+
+        private void btnBrowseSignatureSvg_Click(object? sender, EventArgs e)
+        {
+            using var dialog = new OpenFileDialog
+            {
+                Filter = "SVG Files|*.svg|All Files|*.*",
+                Title = "Select Signature SVG"
+            };
+
+            if (dialog.ShowDialog() == DialogResult.OK)
+            {
+                _signatureSvgPath = dialog.FileName;
+                txtSignatureSvgPath.Text = Path.GetFileName(_signatureSvgPath);
+                LoadSignatureSvgPreview(_signatureSvgPath);
+            }
+        }
+
+        private async void btnTestPrintWithApproval_Click(object? sender, EventArgs e)
+        {
+            if (!_printer.IsOpen)
+            {
+                MessageBox.Show("Printer is not connected. Please connect first.", "Not Connected",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            if (string.IsNullOrEmpty(_signatureSvgPath) || !File.Exists(_signatureSvgPath))
+            {
+                MessageBox.Show("Please select a signature SVG file.", "No SVG Selected",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            try
+            {
+                btnTestPrintWithApproval.Enabled = false;
+                lblWorkflowStatus.Text = "Status: Submitting request...";
+                lblWorkflowStatus.ForeColor = Color.Blue;
+                lblRequestIdValue.Text = "Pending...";
+                txtLastResult.Text = "";
+
+                Stream? paperImageStream = null;
+                if (!string.IsNullOrEmpty(_paperImagePath) && File.Exists(_paperImagePath))
+                {
+                    paperImageStream = File.OpenRead(_paperImagePath);
+                }
+
+                using (paperImageStream)
+                using (var svgStream = File.OpenRead(_signatureSvgPath))
+                {
+                    var paper = cboPaper.SelectedItem is Paper p ? p : Paper.A4;
+                    var (pw, ph) = PaperSizes.GetSizeMm(paper);
+
+                    var request = new PrintApprovalRequest
+                    {
+                        PaperImageStream = paperImageStream,
+                        PaperImageFileName = _paperImagePath != null ? Path.GetFileName(_paperImagePath) : null,
+                        SignatureSvgStream = svgStream,
+                        SignatureSvgFileName = Path.GetFileName(_signatureSvgPath),
+                        PrintSettings = new PrintRequest
+                        {
+                            Width = $"{pw}mm",
+                            Height = $"{ph}mm",
+                            XPosition = txtXPosition.Text,
+                            YPosition = txtYPosition.Text,
+                            Scale = (int)nudScale.Value,
+                            Rotation = (int)nudRotation.Value,
+                            InvertX = chkInvertX.Checked,
+                            InvertY = chkInvertY.Checked
+                        },
+                        ShouldApprove = chkShouldApprove.Checked
+                    };
+
+                    lblWorkflowStatus.Text = chkShouldApprove.Checked ? 
+                        "Status: Waiting for approval..." : 
+                        "Status: Processing rejection...";
+
+                    var response = await _printApprovalService.PrintWithApprovalAsync(request);
+
+                    lblRequestIdValue.Text = response.RequestId.ToString();
+                    lblWorkflowStatus.Text = $"Status: {response.Status}";
+                    lblWorkflowStatus.ForeColor = response.WasPrinted ? Color.Green : Color.Orange;
+
+                    txtLastResult.Text = $"Request ID: {response.RequestId}\r\n" +
+                                        $"Status: {response.Status}\r\n" +
+                                        $"Was Approved: {response.WasApproved}\r\n" +
+                                        $"Was Printed: {response.WasPrinted}\r\n" +
+                                        $"Message: {response.Message}\r\n" +
+                                        $"Commands Sent: {response.CommandsSent}";
+
+                    await LoadRequestLogsAsync();
+                }
+            }
+            catch (Exception ex)
+            {
+                lblWorkflowStatus.Text = $"Status: Error - {ex.Message}";
+                lblWorkflowStatus.ForeColor = Color.Red;
+                txtLastResult.Text = $"ERROR:\r\n{ex.Message}\r\n\r\nStack Trace:\r\n{ex.StackTrace}";
+            }
+            finally
+            {
+                btnTestPrintWithApproval.Enabled = true;
+                RefreshStatus();
+            }
+        }
+
+        private async void btnRefreshLogs_Click(object? sender, EventArgs e)
+        {
+            await LoadRequestLogsAsync();
+        }
+
+        private async Task LoadRequestLogsAsync()
+        {
+            try
+            {
+                btnRefreshLogs.Enabled = false;
+                btnRefreshLogs.Text = "Loading...";
+
+                var count = (int)nudLogCount.Value;
+                var logs = await _printApprovalService.GetRecentRequestsAsync(count);
+
+                lstRequestLogs.Items.Clear();
+                foreach (var log in logs)
+                {
+                    var item = $"{log.CreatedAt:yyyy-MM-dd HH:mm:ss} | {log.Status} | {log.RequestId}";
+                    lstRequestLogs.Items.Add(item);
+                    lstRequestLogs.Tag = log;
+                }
+
+                lblLogCount.Text = $"Showing {logs.Count} requests";
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error loading logs: {ex.Message}", "Error",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            finally
+            {
+                btnRefreshLogs.Enabled = true;
+                btnRefreshLogs.Text = "Refresh History";
+            }
+        }
+
+        private void lstRequestLogs_SelectedIndexChanged(object? sender, EventArgs e)
+        {
+            if (lstRequestLogs.SelectedIndex == -1)
+            {
+                grpLogDetails.Visible = false;
+                return;
+            }
+
+            var selectedText = lstRequestLogs.SelectedItem?.ToString();
+            if (selectedText == null) return;
+
+            var parts = selectedText.Split('|');
+            if (parts.Length < 3) return;
+
+            var requestIdStr = parts[2].Trim();
+            if (!Guid.TryParse(requestIdStr, out var requestId)) return;
+
+            LoadRequestLogDetailsAsync(requestId);
+        }
+
+        private async void LoadRequestLogDetailsAsync(Guid requestId)
+        {
+            try
+            {
+                var log = await _printApprovalService.GetRequestLogAsync(requestId);
+                if (log == null)
+                {
+                    grpLogDetails.Visible = false;
+                    return;
+                }
+
+                grpLogDetails.Visible = true;
+                lblLogRequestIdValue.Text = log.RequestId.ToString();
+                lblLogStatusValue.Text = log.Status.ToString();
+                lblLogCreatedAtValue.Text = log.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss");
+                lblLogUpdatedAtValue.Text = log.UpdatedAt.ToString("yyyy-MM-dd HH:mm:ss");
+                lblLogCompletedAtValue.Text = log.CompletedAt?.ToString("yyyy-MM-dd HH:mm:ss") ?? "N/A";
+                lblLogApprovalResponseValue.Text = log.ApprovalResponse ?? "N/A";
+                lblLogErrorMessageValue.Text = log.ErrorMessage ?? "N/A";
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error loading log details: {ex.Message}", "Error",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void LoadPaperImagePreview(string imagePath)
+        {
+            try
+            {
+                var old = picPaperPreview.Image;
+                picPaperPreview.Image = Image.FromFile(imagePath);
+                old?.Dispose();
+            }
+            catch
+            {
+                picPaperPreview.Image = null;
+            }
+        }
+
+        private void LoadSignatureSvgPreview(string svgPath)
+        {
+            try
+            {
+                var svgDoc = SvgDocument.Open(svgPath);
+                var old = picSignaturePreview.Image;
+                picSignaturePreview.Image = svgDoc.Draw();
+                old?.Dispose();
+            }
+            catch
+            {
+                picSignaturePreview.Image = null;
             }
         }
     }
