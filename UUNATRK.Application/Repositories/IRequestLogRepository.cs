@@ -9,5 +9,6 @@ public interface IRequestLogRepository
     Task<RequestLog?> GetByRequestIdAsync(Guid requestId);
     Task<List<RequestLog>> GetAllByRequestIdAsync(Guid requestId);
     void Update(RequestLog log);
+    Task UpdateAsync(RequestLog log);
     Task<List<RequestLog>> GetRecentAsync(int count = 50);
 }

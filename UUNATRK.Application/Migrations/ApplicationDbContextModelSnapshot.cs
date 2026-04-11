@@ -22,6 +22,57 @@ namespace UUNATRK.Application.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
+            modelBuilder.Entity("UUNATEK.Domain.Entities.PenUsageLog", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("CriticalThresholdReached")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime>("InstalledAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("PenNumber")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("RemovedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("ReplacementThresholdReached")
+                        .HasColumnType("bit");
+
+                    b.Property<double>("TotalDistanceMm")
+                        .HasColumnType("float");
+
+                    b.Property<TimeSpan>("TotalDrawingTime")
+                        .HasColumnType("time");
+
+                    b.Property<int>("TotalPrintJobs")
+                        .HasColumnType("int");
+
+                    b.Property<int>("TotalStrokes")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("WarningThresholdReached")
+                        .HasColumnType("bit");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("InstalledAt");
+
+                    b.HasIndex("IsActive");
+
+                    b.HasIndex("PenNumber")
+                        .IsUnique();
+
+                    b.ToTable("PenUsageLogs");
+                });
+
             modelBuilder.Entity("UUNATEK.Domain.Entities.RequestLog", b =>
                 {
                     b.Property<Guid>("Id")
@@ -37,13 +88,25 @@ namespace UUNATRK.Application.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
+                    b.Property<double?>("DrawingDistanceMm")
+                        .HasColumnType("float");
+
+                    b.Property<TimeSpan?>("DrawingDuration")
+                        .HasColumnType("time");
+
                     b.Property<string>("ErrorMessage")
                         .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid?>("PenUsageLogId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<Guid>("RequestId")
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("StrokeCount")
                         .HasColumnType("int");
 
                     b.Property<DateTime>("UpdatedAt")
@@ -53,11 +116,28 @@ namespace UUNATRK.Application.Migrations
 
                     b.HasIndex("CreatedAt");
 
+                    b.HasIndex("PenUsageLogId");
+
                     b.HasIndex("RequestId");
 
                     b.HasIndex("Status");
 
                     b.ToTable("RequestLogs");
+                });
+
+            modelBuilder.Entity("UUNATEK.Domain.Entities.RequestLog", b =>
+                {
+                    b.HasOne("UUNATEK.Domain.Entities.PenUsageLog", "PenUsageLog")
+                        .WithMany("RequestLogs")
+                        .HasForeignKey("PenUsageLogId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("PenUsageLog");
+                });
+
+            modelBuilder.Entity("UUNATEK.Domain.Entities.PenUsageLog", b =>
+                {
+                    b.Navigation("RequestLogs");
                 });
 #pragma warning restore 612, 618
         }

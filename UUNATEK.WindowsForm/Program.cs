@@ -6,6 +6,7 @@ using UUNATRK.Application;
 using UUNATRK.Application.Data;
 using UUNATRK.Application.Services.Printer;
 using UUNATRK.Application.Services.PrintApproval;
+using UUNATRK.Application.Services.Usage;
 
 namespace UUNATEK.WindowsForm
 {
@@ -42,8 +43,9 @@ namespace UUNATEK.WindowsForm
 
             var printer = serviceProvider.GetRequiredService<PrinterService>();
             var printApprovalService = serviceProvider.GetRequiredService<IPrintApprovalService>();
+            var penUsageService = serviceProvider.GetRequiredService<IPenUsageService>();
 
-            Application.Run(new Form1(printer, printApprovalService));
+            Application.Run(new Form1(printer, printApprovalService, penUsageService));
         }
     }
 }

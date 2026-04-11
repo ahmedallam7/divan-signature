@@ -44,6 +44,12 @@ public class RequestLogRepository : IRequestLogRepository
         _context.RequestLogs.Update(log);
     }
 
+    public async Task UpdateAsync(RequestLog log)
+    {
+        _context.RequestLogs.Update(log);
+        await _context.SaveChangesAsync();
+    }
+
     public async Task<List<RequestLog>> GetRecentAsync(int count = 50)
     {
         return await _context.RequestLogs

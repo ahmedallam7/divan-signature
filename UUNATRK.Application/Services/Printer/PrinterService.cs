@@ -2,12 +2,18 @@ using System.IO.Ports;
 using System.Text;
 using Microsoft.Extensions.Options;
 using UUNATRK.Application.Models;
+using UUNATRK.Application.Services.Usage;
 
 namespace UUNATRK.Application.Services.Printer
 {
-    public class PrinterService(IOptions<PrinterSettings> settings) : IPrinterService
+    public class PrinterService(
+        IOptions<PrinterSettings> settings,
+        IPenUsageCalculator penUsageCalculator,
+        IPenUsageService penUsageService) : IPrinterService
     {
         private readonly PrinterSettings _settings = settings.Value;
+        private readonly IPenUsageCalculator _penUsageCalculator = penUsageCalculator;
+        private readonly IPenUsageService _penUsageService = penUsageService;
         private SerialPort? _port;
         private bool _isPrinting;
 
@@ -71,8 +77,22 @@ namespace UUNATRK.Application.Services.Printer
             _isPrinting = true;
             try
             {
+                // Execute the print
                 await Task.Run(() => ExecutePrintCycle(gcode));
-                return new PrintResponse { Message = "Print complete.", CommandsSent = gcode.Count };
+                
+                // Calculate usage metrics from G-code
+                var usageMetrics = _penUsageCalculator.Calculate(gcode);
+                
+                // Record usage (this will auto-create first pen if needed)
+                var (penUsage, warnings) = await _penUsageService.AddUsageAsync(null, usageMetrics);
+                
+                return new PrintResponse 
+                { 
+                    Message = "Print complete.", 
+                    CommandsSent = gcode.Count,
+                    Usage = usageMetrics,
+                    Warnings = warnings
+                };
             }
             finally { _isPrinting = false; }
         }
@@ -84,8 +104,16 @@ namespace UUNATRK.Application.Services.Printer
 
             _isPrinting = true;
             int totalCommands = 0;
+            double totalDistanceMm = 0;
+            int totalStrokes = 0;
+            TimeSpan totalDrawingTime = TimeSpan.Zero;
+            List<string> allWarnings = new List<string>();
+            
             try
             {
+                // Calculate metrics once (same G-code for all copies)
+                var singleJobMetrics = _penUsageCalculator.Calculate(gcode);
+                
                 await Task.Run(() =>
                 {
                     for (int i = 0; i < copies; i++)
@@ -95,11 +123,28 @@ namespace UUNATRK.Application.Services.Printer
                     }
                 });
 
+                // Record total usage for all copies
+                var totalMetrics = new PenUsageMetrics
+                {
+                    DrawingDistanceMm = singleJobMetrics.DrawingDistanceMm * copies,
+                    StrokeCount = singleJobMetrics.StrokeCount * copies,
+                    DrawingDuration = TimeSpan.FromTicks(singleJobMetrics.DrawingDuration.Ticks * copies)
+                };
+                
+                var (penUsage, warnings) = await _penUsageService.AddUsageAsync(null, totalMetrics);
+                
+                totalDistanceMm = totalMetrics.DrawingDistanceMm;
+                totalStrokes = totalMetrics.StrokeCount;
+                totalDrawingTime = totalMetrics.DrawingDuration;
+                allWarnings = warnings;
+
                 return new PrintResponse
                 {
                     Message = "Bulk print complete.",
                     Copies = copies,
-                    TotalCommandsSent = totalCommands
+                    TotalCommandsSent = totalCommands,
+                    Usage = totalMetrics,
+                    Warnings = allWarnings
                 };
             }
             finally { _isPrinting = false; }
@@ -115,6 +160,24 @@ namespace UUNATRK.Application.Services.Printer
             {
                 await Task.Run(() => ExecuteVoidCycle());
                 return new PrintResponse { Message = "Void print complete - paper ejected without printing.", CommandsSent = 0 };
+            }
+            finally { _isPrinting = false; }
+        }
+
+        public async Task<PrintResponse> ChangePen()
+        {
+            if (_isPrinting)
+                throw new InvalidOperationException("Cannot change pen while printing.");
+
+            _isPrinting = true;
+            try
+            {
+                await Task.Run(() => ExecutePenChangeSequence());
+                return new PrintResponse 
+                { 
+                    Message = "Pen change sequence complete. Ready for new pen.", 
+                    CommandsSent = 3 
+                };
             }
             finally { _isPrinting = false; }
         }
@@ -289,6 +352,34 @@ namespace UUNATRK.Application.Services.Printer
                 catch { }
 
                 Thread.Sleep(10);
+            }
+        }
+
+        private void ExecutePenChangeSequence()
+        {
+            try
+            {
+                Console.WriteLine("=== Starting PEN CHANGE sequence ===");
+                
+                // Packet 1: Move to transition position E7.5
+                Console.WriteLine("  Sending: G1G90 E7.5F5000");
+                Send("G1G90 E7.5F5000");
+                
+                // Packet 2: Ensure absolute mode
+                Console.WriteLine("  Sending: G90");
+                Send("G90");
+                
+                // Packet 3: Move to release position E0.0
+                Console.WriteLine("  Sending: G1G90 E0.0F5000");
+                Send("G1G90 E0.0F5000");
+                
+                Console.WriteLine("=== Pen change sequence complete ===");
+                Console.WriteLine("*** Please manually change the pen now ***");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"!!! ERROR during pen change: {ex.Message}");
+                throw;
             }
         }
     }

@@ -7,6 +7,7 @@ using UUNATRK.Application.Repositories;
 using UUNATRK.Application.Services.Approval;
 using UUNATRK.Application.Services.Printer;
 using UUNATRK.Application.Services.PrintApproval;
+using UUNATRK.Application.Services.Usage;
 
 namespace UUNATRK.Application
 {
@@ -22,6 +23,7 @@ namespace UUNATRK.Application
                 
                 services.Configure<ApprovalServiceSettings>(configuration.GetSection("ApprovalService"));
                 services.Configure<PrintRetrySettings>(configuration.GetSection("PrintRetry"));
+                services.Configure<PenUsageSettings>(configuration.GetSection("PenUsage"));
             }
 
             if (configuration?.GetSection("Printer").Exists() == true)
@@ -34,6 +36,11 @@ namespace UUNATRK.Application
             services.AddScoped<IRequestLogRepository, RequestLogRepository>();
             services.AddScoped<IUnitOfWork>(provider => provider.GetRequiredService<ApplicationDbContext>());
             services.AddScoped<IPrintApprovalService, PrintApprovalService>();
+            
+            // Pen usage tracking services
+            services.AddScoped<IPenUsageCalculator, PenUsageCalculator>();
+            services.AddScoped<IPenUsageRepository, PenUsageRepository>();
+            services.AddScoped<IPenUsageService, PenUsageService>();
             
             var useMockService = configuration?.GetValue<bool>("ApprovalService:UseMockService") ?? true;
             if (useMockService)

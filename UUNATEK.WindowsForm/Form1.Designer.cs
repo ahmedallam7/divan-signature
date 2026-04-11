@@ -28,6 +28,8 @@ namespace UUNATEK.WindowsForm
             lblPortName = new Label();
             lblIsPrinting = new Label();
             btnGetStatus = new Button();
+            lblPenUsage = new Label();
+            btnChangePen = new Button();
             tabControl = new TabControl();
             tabBasicPrint = new TabPage();
             grpSimulation = new GroupBox();
@@ -170,10 +172,12 @@ namespace UUNATEK.WindowsForm
             grpStatus.Controls.Add(lblPortName);
             grpStatus.Controls.Add(lblIsPrinting);
             grpStatus.Controls.Add(btnGetStatus);
+            grpStatus.Controls.Add(lblPenUsage);
+            grpStatus.Controls.Add(btnChangePen);
             grpStatus.Location = new Point(0, 65);
             grpStatus.Name = "grpStatus";
             grpStatus.Padding = new Padding(10);
-            grpStatus.Size = new Size(1024, 55);
+            grpStatus.Size = new Size(1024, 85);
             grpStatus.TabIndex = 1;
             grpStatus.TabStop = false;
             grpStatus.Text = "Printer Status";
@@ -206,14 +210,28 @@ namespace UUNATEK.WindowsForm
             btnGetStatus.Text = "Refresh";
             btnGetStatus.Click += btnGetStatus_Click;
             
+            lblPenUsage.AutoSize = true;
+            lblPenUsage.Location = new Point(15, 50);
+            lblPenUsage.Name = "lblPenUsage";
+            lblPenUsage.Size = new Size(200, 15);
+            lblPenUsage.TabIndex = 4;
+            lblPenUsage.Text = "Pen Usage: --";
+            
+            btnChangePen.Location = new Point(550, 20);
+            btnChangePen.Name = "btnChangePen";
+            btnChangePen.Size = new Size(100, 28);
+            btnChangePen.TabIndex = 5;
+            btnChangePen.Text = "Change Pen";
+            btnChangePen.Click += btnChangePen_Click;
+            
             tabControl.Controls.Add(tabBasicPrint);
             tabControl.Controls.Add(tabPrintWithApproval);
             tabControl.Controls.Add(tabRequestHistory);
             tabControl.Dock = DockStyle.Fill;
-            tabControl.Location = new Point(0, 120);
+            tabControl.Location = new Point(0, 150);
             tabControl.Name = "tabControl";
             tabControl.SelectedIndex = 0;
-            tabControl.Size = new Size(1024, 580);
+            tabControl.Size = new Size(1024, 550);
             tabControl.TabIndex = 2;
             
             tabBasicPrint.Controls.Add(grpSimulation);
@@ -854,6 +872,8 @@ namespace UUNATEK.WindowsForm
         private Label lblPortName;
         private Label lblIsPrinting;
         private Button btnGetStatus;
+        private Label lblPenUsage;
+        private Button btnChangePen;
 
         private TabControl tabControl;
         private TabPage tabBasicPrint;

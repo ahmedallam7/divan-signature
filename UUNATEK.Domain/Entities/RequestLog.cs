@@ -12,4 +12,13 @@ public class RequestLog
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
     public DateTime? CompletedAt { get; set; }
+    
+    // Pen usage tracking
+    public double? DrawingDistanceMm { get; set; }
+    public int? StrokeCount { get; set; }
+    public TimeSpan? DrawingDuration { get; set; }
+    public Guid? PenUsageLogId { get; set; }
+    
+    // Navigation property
+    public PenUsageLog? PenUsageLog { get; set; }
 }

@@ -3,6 +3,7 @@ using UUNATRK.Application.Enums;
 using UUNATRK.Application.Models;
 using UUNATRK.Application.Services.Printer;
 using UUNATRK.Application.Services.PrintApproval;
+using UUNATRK.Application.Services.Usage;
 using Svg;
 
 namespace UUNATEK.WindowsForm
@@ -11,14 +12,16 @@ namespace UUNATEK.WindowsForm
     {
         private readonly PrinterService _printer;
         private readonly IPrintApprovalService _printApprovalService;
+        private readonly IPenUsageService _penUsageService;
         private string? _selectedFilePath;
         private string? _paperImagePath;
         private string? _signatureSvgPath;
 
-        public Form1(PrinterService printer, IPrintApprovalService printApprovalService)
+        public Form1(PrinterService printer, IPrintApprovalService printApprovalService, IPenUsageService penUsageService)
         {
             _printer = printer;
             _printApprovalService = printApprovalService;
+            _penUsageService = penUsageService;
             InitializeComponent();
 
             // Populate paper dropdown (exclude Custom for now)
@@ -76,6 +79,102 @@ namespace UUNATEK.WindowsForm
             lblIsOpen.Text = $"IsOpen: {status.IsOpen}";
             lblPortName.Text = $"Port: {status.PortName}";
             lblIsPrinting.Text = $"Printing: {status.IsPrinting}";
+            
+            // Update pen usage display
+            RefreshPenUsageAsync();
+        }
+
+        private async void RefreshPenUsageAsync()
+        {
+            try
+            {
+                var currentPen = await _penUsageService.GetActivePenAsync();
+                if (currentPen != null)
+                {
+                    var distanceKm = currentPen.TotalDistanceMm / 1000000.0;
+                    lblPenUsage.Text = $"Pen #{currentPen.PenNumber}: {distanceKm:F3}km | Jobs: {currentPen.TotalPrintJobs} | Strokes: {currentPen.TotalStrokes}";
+                    
+                    // Color code based on thresholds
+                    if (currentPen.ReplacementThresholdReached)
+                        lblPenUsage.ForeColor = Color.Red;
+                    else if (currentPen.CriticalThresholdReached)
+                        lblPenUsage.ForeColor = Color.Orange;
+                    else if (currentPen.WarningThresholdReached)
+                        lblPenUsage.ForeColor = Color.Goldenrod;
+                    else
+                        lblPenUsage.ForeColor = Color.Green;
+                }
+                else
+                {
+                    lblPenUsage.Text = "No pen installed (will auto-create on first print)";
+                    lblPenUsage.ForeColor = SystemColors.ControlText;
+                }
+            }
+            catch
+            {
+                lblPenUsage.Text = "Unable to load pen usage";
+                lblPenUsage.ForeColor = Color.Gray;
+            }
+        }
+
+        private async void btnChangePen_Click(object? sender, EventArgs e)
+        {
+            if (!_printer.IsOpen)
+            {
+                MessageBox.Show("Printer is not connected. Please connect first.", "Not Connected",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            if (_printer.IsPrinting)
+            {
+                MessageBox.Show("Cannot change pen while printing.", "Printer Busy",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            var result = MessageBox.Show(
+                "This will execute the pen change sequence (E7.5 → E0.0).\n\n" +
+                "The current pen will be marked as inactive and a new pen will be created.\n\n" +
+                "Continue?",
+                "Change Pen",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Question);
+
+            if (result != DialogResult.Yes)
+                return;
+
+            try
+            {
+                btnChangePen.Enabled = false;
+                btnChangePen.Text = "Changing...";
+
+                // Execute the pen change sequence
+                var response = await _printer.ChangePen();
+
+                // Create new pen in database
+                var newPen = await _penUsageService.CreateNewPenAsync();
+
+                MessageBox.Show(
+                    $"{response.Message}\n\n" +
+                    $"New pen created: Pen #{newPen.PenNumber}\n\n" +
+                    $"Please manually install the new pen now.",
+                    "Pen Change Complete",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+
+                RefreshStatus();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error during pen change: {ex.Message}", "Error",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            finally
+            {
+                btnChangePen.Enabled = true;
+                btnChangePen.Text = "Change Pen";
+            }
         }
 
         // ── Browse SVG ─────────────────────────────────────────────
@@ -307,8 +406,22 @@ namespace UUNATEK.WindowsForm
 
                 var response = await _printer.Print(gcode);
 
-                lblResult.ForeColor = Color.Green;
-                lblResult.Text = $"{response.Message} ({response.CommandsSent} cmds)";
+                // Display usage and warnings
+                var usageInfo = "";
+                if (response.Usage != null)
+                {
+                    var distanceKm = response.Usage.DrawingDistanceMm / 1000000.0;
+                    usageInfo = $"\nUsage: {distanceKm:F4}km, {response.Usage.StrokeCount} strokes, {response.Usage.DrawingDuration.TotalSeconds:F1}s";
+                }
+
+                var warningsInfo = "";
+                if (response.Warnings != null && response.Warnings.Count > 0)
+                {
+                    warningsInfo = "\n⚠ " + string.Join("\n⚠ ", response.Warnings);
+                }
+
+                lblResult.ForeColor = response.Warnings?.Count > 0 ? Color.Orange : Color.Green;
+                lblResult.Text = $"{response.Message} ({response.CommandsSent} cmds){usageInfo}{warningsInfo}";
             }
             catch (Exception ex)
             {

@@ -6,5 +6,9 @@ namespace UUNATRK.Application.Models
         public int CommandsSent { get; set; }
         public int Copies { get; set; }
         public int TotalCommandsSent { get; set; }
+        
+        // Pen usage tracking
+        public PenUsageMetrics? Usage { get; set; }
+        public List<string>? Warnings { get; set; }
     }
 }

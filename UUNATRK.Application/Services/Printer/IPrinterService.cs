@@ -16,4 +16,5 @@ public interface IPrinterService
     Task<PrintResponse> Print(List<string> gcode);
     Task<PrintResponse> BulkPrint(List<string> gcode, int copies);
     Task<PrintResponse> VoidPrint();
+    Task<PrintResponse> ChangePen();
 }

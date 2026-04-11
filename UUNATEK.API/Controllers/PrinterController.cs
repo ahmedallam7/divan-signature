@@ -4,6 +4,7 @@ using UUNATRK.Application.Enums;
 using UUNATRK.Application.Models;
 using UUNATRK.Application.Services.Printer;
 using UUNATRK.Application.Services.PrintApproval;
+using UUNATRK.Application.Services.Usage;
 
 namespace UUNATEK.API.Controllers;
 
@@ -13,13 +14,16 @@ public class PrinterController : ControllerBase
 {
     private readonly PrinterService _printer;
     private readonly IPrintApprovalService _printApprovalService;
+    private readonly IPenUsageService _penUsageService;
 
     public PrinterController(
         PrinterService printer,
-        IPrintApprovalService printApprovalService)
+        IPrintApprovalService printApprovalService,
+        IPenUsageService penUsageService)
     {
         _printer = printer;
         _printApprovalService = printApprovalService;
+        _penUsageService = penUsageService;
     }
 
 
@@ -209,6 +213,56 @@ public class PrinterController : ControllerBase
             return NotFound(new { Message = $"Request log with ID {requestId} not found." });
 
         return Ok(log);
+    }
+
+    // ===== PEN USAGE TRACKING ENDPOINTS =====
+
+    [HttpPost("change-pen")]
+    public async Task<ActionResult<PrintResponse>> ChangePen()
+    {
+        if (!_printer.IsOpen)
+            return BadRequest(new { Message = "Printer is not connected. Call POST /printer/connect first." });
+
+        if (_printer.IsPrinting)
+            return Conflict(new { Message = "Printer is busy." });
+
+        try
+        {
+            var result = await _printer.ChangePen();
+            
+            // Create new pen in database
+            await _penUsageService.CreateNewPenAsync();
+            
+            return Ok(result);
+        }
+        catch (Exception ex)
+        {
+            return BadRequest(new { Message = $"Pen change failed: {ex.Message}" });
+        }
+    }
+
+    [HttpGet("usage/current")]
+    public async Task<ActionResult> GetCurrentPenUsage()
+    {
+        var currentPen = await _penUsageService.GetActivePenAsync();
+        if (currentPen == null)
+            return NotFound(new { Message = "No active pen. Use POST /printer/change-pen to initialize or print a job to auto-initialize." });
+        
+        return Ok(currentPen);
+    }
+
+    [HttpGet("usage/summary")]
+    public async Task<ActionResult<PenUsageSummary>> GetUsageSummary()
+    {
+        var summary = await _penUsageService.GetTotalUsageAsync();
+        return Ok(summary);
+    }
+
+    [HttpGet("usage/history")]
+    public async Task<ActionResult> GetPenHistory()
+    {
+        var history = await _penUsageService.GetPenHistoryAsync();
+        return Ok(history);
     }
 
 
